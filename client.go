@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/libdns/libdns"
 	"github.com/tidwall/gjson"
@@ -44,13 +43,17 @@ func (p *Provider) listRecords(ctx context.Context, zone string) ([]libdns.Recor
 
 	list := make([]libdns.Record, 0, result.Get("#").Int())
 	result.ForEach(func(_, v gjson.Result) bool {
-		list = append(list, libdns.Record{
-			ID:    v.Get("RecordId").String(),
+		rec, err := record{
 			Type:  v.Get("Type").String(),
 			Name:  v.Get("Name").String(),
 			Value: v.Get("Value").String(),
-			TTL:   time.Duration(v.Get("TTL").Int()) * time.Second,
-		})
+		}.libdnsRecord()
+
+		if err != nil {
+			return false
+		}
+
+		list = append(list, rec)
 		return true
 	})
 
@@ -60,10 +63,11 @@ func (p *Provider) listRecords(ctx context.Context, zone string) ([]libdns.Recor
 func (p *Provider) createRecord(ctx context.Context, zone string, record libdns.Record) error {
 	domain := strings.TrimSuffix(zone, ".")
 
+	r := fromLibdnsRecord(record)
 	payload, _ := sjson.SetOptions(reqJson, "Domain", domain, &sOption)
-	payload, _ = sjson.SetOptions(payload, "SubDomain", record.Name, &sOption)
-	payload, _ = sjson.SetOptions(payload, "RecordType", record.Type, &sOption)
-	payload, _ = sjson.SetOptions(payload, "Value", record.Value, &sOption)
+	payload, _ = sjson.SetOptions(payload, "SubDomain", r.Name, &sOption)
+	payload, _ = sjson.SetOptions(payload, "RecordType", r.Type, &sOption)
+	payload, _ = sjson.SetOptions(payload, "Value", r.Value, &sOption)
 	payload, _ = sjson.Delete(payload, "RecordId")
 
 	resp, err := p.sendRequest(ctx, CreateRecord, payload)
@@ -79,48 +83,49 @@ func (p *Provider) createRecord(ctx context.Context, zone string, record libdns.
 	return nil
 }
 
-func (p *Provider) modifyRecord(ctx context.Context, zone string, record libdns.Record) error {
+func (p *Provider) modifyRecord(ctx context.Context, id uint64, zone string, record libdns.Record) error {
 	domain := strings.TrimSuffix(zone, ".")
 
+	r := fromLibdnsRecord(record)
 	payload, _ := sjson.SetOptions(reqJson, "Domain", domain, &sOption)
-	payload, _ = sjson.SetOptions(payload, "SubDomain", record.Name, &sOption)
-	payload, _ = sjson.SetOptions(payload, "RecordType", record.Type, &sOption)
-	payload, _ = sjson.SetOptions(payload, "Value", record.Value, &sOption)
-	payload, _ = sjson.SetOptions(payload, "RecordId", p.id, &sOption)
+	payload, _ = sjson.SetOptions(payload, "SubDomain", r.Name, &sOption)
+	payload, _ = sjson.SetOptions(payload, "RecordType", r.Type, &sOption)
+	payload, _ = sjson.SetOptions(payload, "Value", r.Value, &sOption)
+	payload, _ = sjson.SetOptions(payload, "RecordId", id, &sOption)
 
 	_, err := p.sendRequest(ctx, ModifyRecord, payload)
 	return err
 }
 
-func (p *Provider) deleteRecord(ctx context.Context, zone string, record libdns.Record) error {
+func (p *Provider) deleteRecord(ctx context.Context, id uint64, zone string, record libdns.Record) error {
 	domain := strings.TrimSuffix(zone, ".")
 
 	payload, _ := sjson.Set("", "Domain", domain)
-	payload, _ = sjson.Set(payload, "RecordId", record.ID)
+	payload, _ = sjson.Set(payload, "RecordId", id)
 
 	_, err := p.sendRequest(ctx, DeleteRecord, payload)
 	return err
 }
 
-func (p *Provider) findRecord(ctx context.Context, zone string, record libdns.Record) error {
+func (p *Provider) findRecord(ctx context.Context, zone string, record libdns.Record) (uint64, error) {
 	domain := strings.TrimSuffix(zone, ".")
 
+	r := fromLibdnsRecord(record)
 	payload, _ := sjson.SetOptions(reqJson_find, "Domain", domain, &sOption)
-	payload, _ = sjson.SetOptions(payload, "RecordType", record.Type, &sOption)
-	payload, _ = sjson.SetOptions(payload, "Subdomain", record.Name, &sOption)
+	payload, _ = sjson.SetOptions(payload, "RecordType", r.Type, &sOption)
+	payload, _ = sjson.SetOptions(payload, "Subdomain", r.Name, &sOption)
 
 	resp, err := p.sendRequest(ctx, DescribeRecordList, payload)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	result := gjson.GetBytes(resp, "Response.RecordList.0.RecordId")
 	if !result.Exists() {
-		return ErrRecordNotFound
+		return 0, ErrRecordNotFound
 	}
 
-	p.id = result.Uint()
-	return nil
+	return result.Uint(), nil
 }
 
 func (p *Provider) sendRequest(ctx context.Context, action string, data string) ([]byte, error) {

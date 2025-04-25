@@ -1,5 +1,3 @@
-Loosely based on https://github.com/libdns/tencentcloud
+Basic `tencentcloud` client for [libdns](https://github.com/libdns).
 
-Differences:
-1. No record ID is required, and it will not be returned either.
-2. `SetRecords` works as `libdns` [documented](https://pkg.go.dev/github.com/libdns/libdns#RecordSetter).
+The TTL parameter will be ignored.
