@@ -21,6 +21,8 @@ var (
 )
 
 func TestSetRecords(t *testing.T) {
+	skipTencentCloudIntegrationIfMissing(t)
+
 	netip, err := netip.ParseAddr(value)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -39,6 +41,8 @@ func TestSetRecords(t *testing.T) {
 }
 
 func TestGetRecords(t *testing.T) {
+	skipTencentCloudIntegrationIfMissing(t)
+
 	records, err := provider.GetRecords(context.Background(), zone)
 	if err != nil {
 		t.Fatalf("GetRecords: %v", err)
@@ -47,5 +51,12 @@ func TestGetRecords(t *testing.T) {
 		rr := record.RR()
 		t.Logf("RecordType: %s, Name: %s, Data: %s",
 			rr.Type, rr.Name, rr.Data)
+	}
+}
+
+func skipTencentCloudIntegrationIfMissing(t *testing.T) {
+	t.Helper()
+	if provider.SecretId == "" || provider.SecretKey == "" || zone == "" || name == "" || value == "" {
+		t.Skip("set TC_SECRET_ID, TC_SECRET_KEY, TC_ZONE, TC_NAME, and TC_VALUE to run Tencent Cloud integration tests")
 	}
 }

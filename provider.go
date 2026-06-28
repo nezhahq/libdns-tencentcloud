@@ -28,15 +28,15 @@ func (p *Provider) AppendRecords(ctx context.Context, zone string, records []lib
 
 func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
 	for _, record := range records {
-		var id uint64
-		if rid, err := p.findRecord(ctx, zone, record); err != nil {
-			id = rid
-			if errors.Is(err, ErrRecordNotFound) {
-				if err := p.createRecord(ctx, zone, record); err != nil {
-					return nil, err
-				}
-				continue
+		id, err := p.findRecord(ctx, zone, record)
+		if errors.Is(err, ErrRecordNotFound) {
+			if err := p.createRecord(ctx, zone, record); err != nil {
+				return nil, err
 			}
+			continue
+		}
+		if err != nil {
+			return nil, err
 		}
 		if err := p.modifyRecord(ctx, id, zone, record); err != nil {
 			return nil, err
@@ -48,10 +48,15 @@ func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns
 
 func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
 	for _, record := range records {
-		if id, err := p.findRecord(ctx, zone, record); err != nil {
-			if err := p.deleteRecord(ctx, id, zone, record); err != nil {
-				return nil, err
-			}
+		id, err := p.findRecord(ctx, zone, record)
+		if errors.Is(err, ErrRecordNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		if err := p.deleteRecord(ctx, id, zone, record); err != nil {
+			return nil, err
 		}
 	}
 
